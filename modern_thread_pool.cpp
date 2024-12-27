@@ -53,7 +53,8 @@ void ModernThreadPool::workerThread(const TaskType& type) {
                 return;
             }
             
-            task = std::move(taskQueues[type].front());
+            // 获取优先级最高的任务
+            task = std::move(taskQueues[type].top().func);
             taskQueues[type].pop();
         }
         task();

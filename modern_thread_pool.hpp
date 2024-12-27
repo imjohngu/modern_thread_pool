@@ -43,7 +43,7 @@ public:
 
     // 提交任务的模板方法
     template<class F, class... Args>
-    auto submit(const TaskType& type, F&& f, Args&&... args) 
+    auto submit(const TaskType& type, int priority, F&& f, Args&&... args) 
         -> std::future<typename std::invoke_result_t<F, Args...>>;
 
     // 获取通用线程数量
@@ -70,8 +70,19 @@ private:
     std::vector<std::thread> generalWorkers;
     std::unordered_map<TaskType, std::thread> dedicatedWorkers;
     
-    // 每种类型的任务队列
-    std::unordered_map<TaskType, std::queue<std::function<void()>>> taskQueues;
+    // 定义任务结构体，包含优先级
+    struct Task {
+        std::function<void()> func;
+        int priority;  // 优先级，数字越大优先级越高
+
+        // 比较运算符重载，用于优先级队列
+        bool operator<(const Task& other) const {
+            return priority < other.priority;
+        }
+    };
+
+    // 将普通队列改为优先级队列
+    std::unordered_map<TaskType, std::priority_queue<Task>> taskQueues;
     
     // 同步原语
     mutable std::unordered_map<TaskType, std::mutex> queueMutexes;
@@ -83,7 +94,7 @@ private:
 
 // 模板方法的实现必须在头文件中
 template<class F, class... Args>
-auto ModernThreadPool::submit(const TaskType& type, F&& f, Args&&... args) 
+auto ModernThreadPool::submit(const TaskType& type, int priority, F&& f, Args&&... args) 
     -> std::future<typename std::invoke_result_t<F, Args...>> 
 {
     using return_type = typename std::invoke_result_t<F, Args...>;
@@ -95,7 +106,10 @@ auto ModernThreadPool::submit(const TaskType& type, F&& f, Args&&... args)
     std::future<return_type> res = task->get_future();
     {
         std::lock_guard<std::mutex> lock(queueMutexes[type]);
-        taskQueues[type].emplace([task](){ (*task)(); });
+        taskQueues[type].push(Task{
+            [task](){ (*task)(); },
+            priority
+        });
     }
     
     conditions[type].notify_one();
